@@ -11,24 +11,37 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.sql.*;
+import java.util.*;
 
 public class Main {
-    public static void main(String[] args) throws IOException {
 
-        // 待处理的链接池
-        List<String> linkPool = new ArrayList<>();
-        // 已经处理的链接池
-        Set<String> processedLinks = new HashSet<>();
-        linkPool.add("https://sina.cn");
+    private static List<String> loadUrlsFromDatabase(Connection connection, String sql) throws SQLException {
+        List<String> results = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            ResultSet resultSet = statement.executeQuery();
+            while (resultSet.next()) {
+                results.add(resultSet.getString(1));
+            }
+        }
+        return results;
+    }
+
+
+    public static void main(String[] args) throws IOException, SQLException {
+        Connection connection = DriverManager.getConnection("jdbc:h2:file:\\C:\\Users\\34936\\IdeaProjects\\multithreaded-crawler\\news", "root", "root");
+
+        // 从数据库加载即将处理的链接的代码
+        List<String> linkPool = loadUrlsFromDatabase(connection, "select link from \n" + "LINK_TO_BE_PROCESSED");
+        // 从数据库加载已经处理的链接的代码
+        Set<String> processedLinks = new HashSet<>(loadUrlsFromDatabase(connection, "select link from \n" + "LINK_ALREADY_PROCESSED"));
 
         while (true) {
             if (linkPool.isEmpty()) {
                 break;
             }
+            //
+            // 每次处理完后，更新数据库
             String link = linkPool.remove(linkPool.size() - 1);
 
             if (processedLinks.contains(link)) {
@@ -44,7 +57,10 @@ public class Main {
                 // 这是我们不感兴趣的，不处理它
             }
         }
+
+
     }
+
 
     private static void storeIntoDatabaseIfItIsNewsPage(Document doc) {
         ArrayList<Element> articleTags = doc.select("article");
