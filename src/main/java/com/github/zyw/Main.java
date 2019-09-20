@@ -1,5 +1,6 @@
 package com.github.zyw;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -11,15 +12,21 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
-import java.sql.*;
-import java.util.*;
+import java.sql.DriverManager;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
+    private static final String USER_NAME = "root";
+    private static final String PASSWORD = "root";
 
     private static List<String> loadUrlsFromDatabase(Connection connection, String sql) throws SQLException {
         List<String> results = new ArrayList<>();
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            ResultSet resultSet = statement.executeQuery();
+        try (PreparedStatement statement = connection.prepareStatement(sql); ResultSet resultSet = statement.executeQuery()) {
             while (resultSet.next()) {
                 results.add(resultSet.getString(1));
             }
@@ -27,38 +34,68 @@ public class Main {
         return results;
     }
 
-
+    @SuppressFBWarnings("DMI_CONSTANT_DB_PASSWORD")
     public static void main(String[] args) throws IOException, SQLException {
-        Connection connection = DriverManager.getConnection("jdbc:h2:file:\\C:\\Users\\34936\\IdeaProjects\\multithreaded-crawler\\news", "root", "root");
-
-        // 从数据库加载即将处理的链接的代码
-        List<String> linkPool = loadUrlsFromDatabase(connection, "select link from \n" + "LINK_TO_BE_PROCESSED");
-        // 从数据库加载已经处理的链接的代码
-        Set<String> processedLinks = new HashSet<>(loadUrlsFromDatabase(connection, "select link from \n" + "LINK_ALREADY_PROCESSED"));
+        Connection connection = DriverManager.getConnection("jdbc:h2:file:\\C:\\Users\\34936\\IdeaProjects\\multithreaded-crawler\\news", USER_NAME, PASSWORD);
 
         while (true) {
+            // 从数据库加载即将处理的链接的代码
+            List<String> linkPool = loadUrlsFromDatabase(connection, "select link from \n" + "LINK_TO_BE_PROCESSED");
+
             if (linkPool.isEmpty()) {
                 break;
             }
-            //
-            // 每次处理完后，更新数据库
-            String link = linkPool.remove(linkPool.size() - 1);
 
-            if (processedLinks.contains(link)) {
+            // 从待处理池子中捞一个来处理，
+            // 处理完后从池子（包括数据库）中删除
+            String link = linkPool.remove(linkPool.size() - 1);
+            insertLinkIntoDatabase(connection, link, "DELETE FROM LINK_TO_BE_PROCESSED where link = ?");
+
+            // 询问数据库，当前链接是不是已经被处理过了？
+            if (!isLinkProcessed(connection, link)) {
                 continue;
             }
 
             if (isInterestingLink(link)) {
                 Document doc = httpGetAndParseHtml(link);
-                doc.select("a").stream().map(aTag -> aTag.attr("href")).forEach(linkPool::add);
+
+                parseUrlsFromPageAndStoreIntoDatabase(connection, doc);
+
                 storeIntoDatabaseIfItIsNewsPage(doc);
-                processedLinks.add(link);
-            } else {
-                // 这是我们不感兴趣的，不处理它
+
+                insertLinkIntoDatabase(connection, link, "INSERT INTO LINK_ALREADY_PROCESSED (LINK) VALUES (?)");
             }
         }
+    }
 
+    private static void parseUrlsFromPageAndStoreIntoDatabase(Connection connection, Document doc) throws SQLException {
+        for (Element aTag : doc.select("a")) {
+            String href = aTag.attr("href");
+            insertLinkIntoDatabase(connection, href, "INSERT INTO LINK_TO_BE_PROCESSED (LINK) VALUES (?)");
+        }
+    }
 
+    private static boolean isLinkProcessed(Connection connection, String link) throws SQLException {
+        ResultSet resultSet = null;
+        try (PreparedStatement statement = connection.prepareStatement("select link from LINK_ALREADY_PROCESSED where link = ?")) {
+            statement.setString(1, link);
+            resultSet = statement.executeQuery();
+            while (resultSet.next()) {
+                return true;
+            }
+        } finally {
+            if (resultSet != null) {
+                resultSet.close();
+            }
+        }
+        return false;
+    }
+
+    private static void insertLinkIntoDatabase(Connection connection, String link, String sql) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, link);
+            statement.executeUpdate();
+        }
     }
 
 
