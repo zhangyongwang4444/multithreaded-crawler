@@ -56,7 +56,7 @@ public class MyBatisCrawlerDao implements CrawlerDao {
     @Override
     public void insertProcessedLink(String link) {
         Map<String, Object> param = new HashMap<>();
-        param.put("tablename", "LINKS_ALREADY_PROCESSED");
+        param.put("tableName", "LINKS_ALREADY_PROCESSED");
         param.put("link", link);
         try (SqlSession session = sqlSessionFactory.openSession(true)) {
             session.insert("com.github.zyw.MyMapper.insertLink", param);
@@ -66,7 +66,7 @@ public class MyBatisCrawlerDao implements CrawlerDao {
     @Override
     public void insertLinkToBeProcessed(String link) {
         Map<String, Object> param = new HashMap<>();
-        param.put("tablename", "LINKS_TO_BE_PROCESSED");
+        param.put("tableName", "LINKS_TO_BE_PROCESSED");
         param.put("link", link);
         try (SqlSession session = sqlSessionFactory.openSession(true)) {
             session.insert("com.github.zyw.MyMapper.insertLink", param);
